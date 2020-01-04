@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Google Auth files
+cred_docs.json
+cred_drive.json
+*.pickle
