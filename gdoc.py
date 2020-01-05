@@ -1,6 +1,6 @@
 # Google Docs Interface for use in gdocsfs
 # Author: Pranav Kumar <pmkumar@cmu.edu>
-# 
+#
 # Base64 encoding is used for content - Docs doesn't play well with escape chars
 #
 # We need both the Docs and Drive APIs - Docs for creating/editing files and
@@ -42,17 +42,22 @@ WRITE_OFFSET = 1
 ### HELPERS ###
 ###############
 
-# string -> base64 encoding
-def encb64(string):
-    encoded_bytes = base64.b64encode(string.encode('utf-8'))
-    b64_str = str(encoded_bytes, 'utf-8')
-    return b64_str
+# byte array -> string representation
+def enc_bytes(byte_seq):
+    result = ''
+    for b in byte_seq:
+        result += f'{str(b)},'
+    # encoded_bytes = base64.b64encode(string.encode('utf-8'))
+    # b64_str = str(encoded_bytes, 'utf-8')
+    return result
 
-# base64 encoding -> string
-def decb64(b64):
-    decoded_bytes = base64.b64decode(b64)
-    decoded_str = str(decoded_bytes, 'utf-8')
-    return decoded_str
+# string rep -> byte array
+def dec_bytes(string):
+    split = string.split(',')
+    return bytes(int(s) for s in split if s.isdigit())
+    # decoded_bytes = base64.b64decode(b64)
+    # decoded_str = str(decoded_bytes, 'utf-8')
+    # return decoded_str
 
 ######################
 ### INITIALIZATION ###
@@ -130,6 +135,7 @@ def read_paragraph_element(element):
 
 # Parses document and reads num_bytes bytes starting at offset
 # Adapted from: https://developers.google.com/docs/api/samples/extract-text
+# Returns tuple: (byte array representing content, length of document content)
 def read_strucutural_elements(elements, offset, num_bytes=None):
     text = ''
 
@@ -143,20 +149,26 @@ def read_strucutural_elements(elements, offset, num_bytes=None):
             text += read_paragraph_element(elems[0])
 
             # Each paragraph element adds a \n
-            text += '\n'
-    
+            # text += '\n'
+
     # Decode from base64
-    decoded_str = decb64(text)
+    # decoded_str = decb64(text)
+
+    # Convert to array of bytes
+    byte_seq = dec_bytes(text)
+    # print(list(text))
 
     if num_bytes:
-        return decoded_str[offset : offset + num_bytes]
+        return bytes(byte_seq[offset : offset + num_bytes]), len(text)
     else:
-        return decoded_str
+        return bytes(byte_seq), len(text)
 
 # Args: doc id (string), offset (int), num_bytes (int/None)
 #
-# Reads num_bytes bytes of doc starting from offset and returns contents as a
-# string. (If num_bytes is None, reads the whole file by default)
+# Reads num_bytes bytes of doc starting from offset
+# (If num_bytes is None, reads the whole file by default)
+#
+# Returns tuple: (contents as byte array, length of content in doc)
 def read_doc(doc_id, offset, num_bytes=None):
     global SERVICE
 
@@ -168,13 +180,12 @@ def read_doc(doc_id, offset, num_bytes=None):
 
     # The first element is always a null element which doesn't matter
     elements = elements[1:]
-    contents = read_strucutural_elements(elements, offset, num_bytes)
+    # contents: byte array
+    contents, total_len = read_strucutural_elements(elements, offset, num_bytes)
 
-    # Get rid of the terminating \n if needed
-    if contents and contents[-1] == '\n':
-        return contents[:-1]
+    # Get the sequence of bytes by splitting on the comma
 
-    return contents
+    return contents, total_len
 
 # Args: doc id (string), offset (int), content to write (byte-string)
 #
@@ -185,13 +196,16 @@ def write_doc(doc_id, offset, content):
     # Since we store in base64, offset must be mapped too. Most straightforward
     # way to do this is to read the doc, insert the string at the offset, then
     # write it back in
-    current_contents = read_doc(doc_id, 0, None)
+
+    # current_contents: byte array
+    current_contents, total_content_len = read_doc(doc_id, 0, None)
 
     # Get the length of the base64 encoding of this string
-    b64_len = len(encb64(current_contents))
+    # b64_len = len(encb64(current_contents))
 
-    # print(content, current_contents)
-    content = str(content, 'utf-8')
+    # Decode bytes -> string with utf-8
+    # print(content)
+    # content = str(content, 'utf-8')
 
     # Insert the contents at offset in current contents
     new_contents = current_contents[:offset] + content +\
@@ -202,13 +216,14 @@ def write_doc(doc_id, offset, content):
         'deleteContentRange': {
             'range': {
                 'startIndex': WRITE_OFFSET,
-                'endIndex': b64_len + 1
+                'endIndex': total_content_len
             }
         }
     }
 
-    # Encode new contents in base64
-    b64_str = encb64(new_contents)
+    # Encode new contents to string form
+    byte_str = enc_bytes(new_contents)
+    # print(byte_str, total_content_len)
 
     # Insert new contents
     insert = {
@@ -216,14 +231,14 @@ def write_doc(doc_id, offset, content):
             'location': {
                 'index': WRITE_OFFSET,
             },
-            'text': b64_str
+            'text': byte_str
         }
     }
 
     # Don't delete anything if the file is blank
-    requests = [ delete ] if b64_len > 0 else []
-    if b64_str: requests.append(insert)
-    
+    requests = [ delete ] if total_content_len > 1 else []
+    if byte_str: requests.append(insert)
+
     # If any deletion or insertion needs to be performed
     if requests:
         result = SERVICE.documents().batchUpdate(

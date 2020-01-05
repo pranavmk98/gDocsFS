@@ -348,11 +348,11 @@ class GDocsFS(Operations):
 
         # Get the doc ID
         doc_id = self.fd_dids[fh]
-        string = gdoc.read_doc(doc_id, offset, length)
-
+        string, _ = gdoc.read_doc(doc_id, offset, length)
+        return string
         # Possibly add \n ?
-        s = ('%s' % string)
-        return s.encode('utf-8')
+        # s = ('%s' % string)
+        # return s.encode('utf-8')
 
     def write(self, path, buf, offset, fh):
         print('write')
@@ -377,10 +377,11 @@ class GDocsFS(Operations):
 
         # Get the current content
         doc_id = self.path_dids[path]
-        curr_content = gdoc.read_doc(doc_id, 0, None)
+        curr_content, _ = gdoc.read_doc(doc_id, 0, None)
 
         # Make sure extending the file fills it in with zero bytes
-        new_content = curr_content.ljust(length, '\x00').encode('utf-8')
+        null = bytes([0])
+        new_content = curr_content.ljust(length, null)
         # Write the new truncated content
         gdoc.write_doc(doc_id, 0, new_content)
 
