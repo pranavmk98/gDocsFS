@@ -11,6 +11,7 @@
 from __future__ import print_function
 import base64
 import pickle
+import re
 import os.path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -43,16 +44,14 @@ WRITE_OFFSET = 1
 ###############
 
 # byte array -> string representation
-def enc_bytes(byte_seq):
+def bytes_to_string(byte_seq):
     result = ''
     for b in byte_seq:
         result += f'{str(b)},'
-    # encoded_bytes = base64.b64encode(string.encode('utf-8'))
-    # b64_str = str(encoded_bytes, 'utf-8')
     return result
 
 # string rep -> byte array
-def dec_bytes(string):
+def string_to_bytes(string):
     split = string.split(',')
     return bytes(int(s) for s in split if s.isdigit())
     # decoded_bytes = base64.b64decode(b64)
@@ -137,31 +136,29 @@ def read_paragraph_element(element):
 # Adapted from: https://developers.google.com/docs/api/samples/extract-text
 # Returns tuple: (byte array representing content, length of document content)
 def read_strucutural_elements(elements, offset, num_bytes=None):
-    text = ''
 
-    for elem in elements:
-        if 'paragraph' in elem:
-            paras = elem.get('paragraph')
-            elems = paras.get('elements')
+    # There should only be one paragraph
+    assert(len(elements) == 1)
+    elem = elements[0]
+    paras = elem.get('paragraph')
+    elems = paras.get('elements')
 
-            # There should only be one element per paragraph
-            assert(len(elems) == 1)
-            text += read_paragraph_element(elems[0])
+    # There should only be one element per paragraph
+    assert(len(elems) == 1)
+    text = read_paragraph_element(elems[0])
+    total_content_len = len(text)
 
-            # Each paragraph element adds a \n
-            # text += '\n'
-
-    # Decode from base64
-    # decoded_str = decb64(text)
+    # Get rid of newlines
+    text = re.sub('[\n]', '', text)
 
     # Convert to array of bytes
-    byte_seq = dec_bytes(text)
-    # print(list(text))
+    byte_seq = string_to_bytes(text)
+    assert(text == bytes_to_string(byte_seq))
 
     if num_bytes:
-        return bytes(byte_seq[offset : offset + num_bytes]), len(text)
+        return byte_seq[offset : offset + num_bytes], total_content_len
     else:
-        return bytes(byte_seq), len(text)
+        return byte_seq, total_content_len
 
 # Args: doc id (string), offset (int), num_bytes (int/None)
 #
@@ -200,13 +197,6 @@ def write_doc(doc_id, offset, content):
     # current_contents: byte array
     current_contents, total_content_len = read_doc(doc_id, 0, None)
 
-    # Get the length of the base64 encoding of this string
-    # b64_len = len(encb64(current_contents))
-
-    # Decode bytes -> string with utf-8
-    # print(content)
-    # content = str(content, 'utf-8')
-
     # Insert the contents at offset in current contents
     new_contents = current_contents[:offset] + content +\
         current_contents[offset:]
@@ -222,8 +212,10 @@ def write_doc(doc_id, offset, content):
     }
 
     # Encode new contents to string form
-    byte_str = enc_bytes(new_contents)
-    # print(byte_str, total_content_len)
+    byte_str = bytes_to_string(new_contents)
+
+    # No empty bytes
+    assert(',,' not in byte_str)
 
     # Insert new contents
     insert = {

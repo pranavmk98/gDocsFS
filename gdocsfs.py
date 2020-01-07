@@ -20,9 +20,6 @@ class GDocsFS(Operations):
         self.root = root
         self.files = {}
 
-        # Dict: file path -> file size
-        self.path_size = {}
-
         # Dict: file path -> document ID (did)
         self.path_dids = {}
 
@@ -131,10 +128,6 @@ class GDocsFS(Operations):
     # to this function from create())
     def _mkdir_helper(self, path, files, mode):
         # Should not create root
-        # print('mkdir helper')
-        # print(path, files)
-        # return
-        # if path == '/dir1/dir2':return
         if path == '/':
             return files
 
@@ -246,8 +239,6 @@ class GDocsFS(Operations):
         print('unlink', path)
         if path in self.data:
             self.data.pop(path)
-        # if path in self.files:
-        #     self.files.pop(path)
 
         dirs = path.split('/')[1:]
         files = self.files['/']['subdirs']
@@ -307,9 +298,6 @@ class GDocsFS(Operations):
         # Create a new document
         doc_id = gdoc.create_doc(path)
 
-        # Map path -> file size
-        self.path_size[path] = 0
-
         # Map path -> document ID
         self.path_dids[path] = doc_id
 
@@ -341,7 +329,7 @@ class GDocsFS(Operations):
         return self.fd
 
     def read(self, path, length, offset, fh):
-        print('read')
+        print('read', offset, path)
 
         if fh not in self.fd_dids:
             return FuseOSError(errno.EBADF)
@@ -350,12 +338,9 @@ class GDocsFS(Operations):
         doc_id = self.fd_dids[fh]
         string, _ = gdoc.read_doc(doc_id, offset, length)
         return string
-        # Possibly add \n ?
-        # s = ('%s' % string)
-        # return s.encode('utf-8')
 
     def write(self, path, buf, offset, fh):
-        print('write')
+        print('write', offset, path)
 
         if fh not in self.fd_dids:
             return FuseOSError(errno.EBADF)
@@ -364,8 +349,6 @@ class GDocsFS(Operations):
         doc_id = self.fd_dids[fh]
         gdoc.write_doc(doc_id, offset, buf)
 
-        # Update the file size
-        self.path_size[path] += len(buf)
         assert(path != '')
         file_info = self._get_file_dict(path, self.files)
         file_info['attr']['st_size'] += len(buf)
@@ -385,8 +368,6 @@ class GDocsFS(Operations):
         # Write the new truncated content
         gdoc.write_doc(doc_id, 0, new_content)
 
-        # Update the file size
-        self.path_size[path] = length
         assert(path != '')
         file_info = self._get_file_dict(path, self.files)
         file_info['attr']['st_size'] = length
